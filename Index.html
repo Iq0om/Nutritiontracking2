@@ -1,0 +1,1232 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>منصة التغذية الرياضية - فريق الكاراتيه (الحريق والنصر)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;900&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Cairo', sans-serif; }
+        @media print {
+            header, .no-print, .chart-section, .filter-bar { display: none !important; }
+            body { background: #fff !important; color: #000 !important; }
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen" x-data="nutritionCoachApp()" x-init="init()">
+
+    <!-- Header -->
+    <header class="bg-slate-900 border-b border-slate-800 sticky top-0 z-40 shadow-xl">
+        <div class="max-w-7xl mx-auto px-4 py-4 flex flex-col md:flex-row justify-between items-center gap-4">
+            <div class="flex items-center gap-3">
+                <div class="bg-emerald-500 text-slate-950 p-2.5 rounded-2xl font-black text-xl shadow-lg shadow-emerald-500/25">🥋</div>
+                <div>
+                    <h1 class="text-xl font-bold text-white tracking-wide">منصة أخصائي التغذية الرياضية - فريق الكاراتيه</h1>
+                    <p class="text-xs text-slate-400">نادي الحريق ونادي النصر · قطع الوزن · الوجبات · المكملات · الترطيب</p>
+                </div>
+            </div>
+            <div class="flex flex-wrap items-center justify-center gap-2">
+                <button @click="openAddModal()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition shadow-lg shadow-emerald-900/30">➕ إضافة لاعب</button>
+                <button @click="exportData()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3.5 py-2.5 rounded-xl text-sm transition border border-slate-700">تصدير (Backup)</button>
+                <label class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3.5 py-2.5 rounded-xl text-sm transition border border-slate-700 cursor-pointer">
+                    استيراد
+                    <input type="file" accept=".json" class="hidden" @change="importData($event)">
+                </label>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 py-8 space-y-8">
+
+        <!-- Quick Panel: player list + weight-cut calculator -->
+        <section class="bg-slate-900 p-5 rounded-2xl border border-emerald-500/30 shadow-xl no-print">
+            <div class="flex flex-col lg:flex-row gap-5">
+                <div class="lg:w-1/3 space-y-3">
+                    <h2 class="text-base font-bold text-emerald-400">⚡ الحساب السريع - اختر لاعب</h2>
+                    <select x-model.number="selectedId" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500">
+                        <option value="">— اختر لاعب من القائمة —</option>
+                        <optgroup label="نادي الحريق">
+                            <template x-for="p in players.filter(x => x.club === 'نادي الحريق')" :key="p.id">
+                                <option :value="p.id" x-text="p.name + ' (' + p.category + ')'"></option>
+                            </template>
+                        </optgroup>
+                        <optgroup label="نادي النصر">
+                            <template x-for="p in players.filter(x => x.club === 'نادي النصر')" :key="p.id">
+                                <option :value="p.id" x-text="p.name + ' (' + p.category + ')'"></option>
+                            </template>
+                        </optgroup>
+                        <optgroup label="أخرى">
+                            <template x-for="p in players.filter(x => x.club !== 'نادي الحريق' && x.club !== 'نادي النصر')" :key="p.id">
+                                <option :value="p.id" x-text="p.name + ' (' + p.club + ')'"></option>
+                            </template>
+                        </optgroup>
+                    </select>
+
+                    <template x-if="selected">
+                        <div class="space-y-3">
+                            <div class="grid grid-cols-2 gap-2">
+                                <div>
+                                    <label class="block text-xs text-slate-400 mb-1">الوزن الحالي (كجم)</label>
+                                    <input type="number" step="0.1" x-model.number="qc.current" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500">
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-slate-400 mb-1">الوزن المطلوب (كجم)</label>
+                                    <input type="number" step="0.1" x-model.number="qc.target" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500">
+                                </div>
+                                <div class="col-span-2">
+                                    <label class="block text-xs text-slate-400 mb-1">الأيام المتبقية للوزن (الميزان)</label>
+                                    <input type="number" min="1" x-model.number="qc.days" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500">
+                                </div>
+                            </div>
+                            <div class="flex gap-2">
+                                <button @click="applyQuickToPlayer()" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-2 rounded-xl text-xs font-semibold transition">حفظ الأوزان في الخطة</button>
+                                <button @click="window.print()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-xl text-xs border border-slate-700 transition">🖨️ طباعة</button>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+
+                <div class="lg:w-2/3">
+                    <template x-if="!selected">
+                        <div class="h-full flex items-center justify-center text-slate-500 text-sm py-10">اختر لاعباً لتظهر لك حسابات قطع الوزن والخطة فوراً.</div>
+                    </template>
+                    <template x-if="selected && calc">
+                        <div class="space-y-3">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <h3 class="text-lg font-black text-white" x-text="selected.name"></h3>
+                                <span class="text-xs text-slate-400" x-text="selected.club + ' | ' + selected.category + ' | العمر التقريبي: ' + calc.age + ' سنة'"></span>
+                                <span x-show="calc.minor" class="px-2 py-0.5 rounded-full text-xs bg-sky-500/10 text-sky-300 border border-sky-500/30">دون 18 سنة</span>
+                            </div>
+
+                            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+                                <div class="bg-slate-950 border border-slate-800 rounded-xl p-3">
+                                    <div class="text-xs text-slate-400" x-text="calc.diff > 0 ? 'المطلوب خسارته' : (calc.diff < 0 ? 'المطلوب زيادته' : 'تثبيت')"></div>
+                                    <div class="text-xl font-black text-white" x-text="Math.abs(calc.diff).toFixed(1) + ' كجم'"></div>
+                                    <div class="text-[11px] text-slate-500" x-text="Math.abs(calc.pct).toFixed(1) + '% من الوزن'"></div>
+                                </div>
+                                <div class="bg-slate-950 border border-slate-800 rounded-xl p-3">
+                                    <div class="text-xs text-slate-400">المعدل الأسبوعي</div>
+                                    <div class="text-xl font-black" :class="calc.statusColor" x-text="Math.abs(calc.weeklyKg).toFixed(2) + ' كجم'"></div>
+                                    <div class="text-[11px] text-slate-500" x-text="Math.abs(calc.weeklyPct).toFixed(2) + '% / أسبوع'"></div>
+                                </div>
+                                <div class="bg-slate-950 border border-slate-800 rounded-xl p-3">
+                                    <div class="text-xs text-slate-400">السعرات المقترحة / يوم</div>
+                                    <div class="text-xl font-black text-emerald-400" x-text="calc.kcal"></div>
+                                    <div class="text-[11px] text-slate-500" x-text="'تقدير الصيانة: ' + calc.maintenance"></div>
+                                </div>
+                                <div class="bg-slate-950 border border-slate-800 rounded-xl p-3">
+                                    <div class="text-xs text-slate-400">ماكروز مقترحة</div>
+                                    <div class="text-sm font-bold text-white mt-1">
+                                        <span class="text-emerald-400" x-text="'P ' + calc.protein"></span> ·
+                                        <span class="text-blue-400" x-text="'C ' + calc.carbs"></span> ·
+                                        <span class="text-amber-400" x-text="'F ' + calc.fats"></span>
+                                    </div>
+                                    <button @click="applyCalcToPlayer()" class="mt-1 text-[11px] text-emerald-400 hover:text-emerald-300 underline">تطبيقها على الخطة</button>
+                                </div>
+                            </div>
+
+                            <div class="rounded-xl p-3 text-sm border" :class="calc.boxClass">
+                                <div class="font-bold" x-text="calc.statusTitle"></div>
+                                <ul class="mt-1 text-xs space-y-1 list-disc pr-5">
+                                    <template x-for="n in calc.notes" :key="n">
+                                        <li x-text="n"></li>
+                                    </template>
+                                </ul>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </section>
+
+        <!-- Weight Cutting -->
+        <section id="cut-section" class="bg-slate-900 p-5 rounded-2xl border border-amber-500/30 shadow-xl no-print">
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+                <div>
+                    <h2 class="text-base font-bold text-amber-400">⚖️ قطع الوزن (Weight Cutting)</h2>
+                    <p class="text-xs text-slate-400">أضف اللاعب للمرحلة واختر البروتوكول — يظهر له برنامج اليوم تلقائياً حسب الأيام المتبقية للوزنية</p>
+                </div>
+                <span class="text-xs bg-amber-500/10 text-amber-300 border border-amber-500/20 rounded-full px-3 py-1" x-text="cutPlayers.length + ' لاعب في المرحلة'"></span>
+            </div>
+
+            <div class="grid lg:grid-cols-3 gap-4">
+                <!-- Add form -->
+                <div class="space-y-3 bg-slate-950 border border-slate-800 rounded-2xl p-4 h-fit">
+                    <h3 class="text-sm font-bold text-white">➕ إضافة لاعب لقطع الوزن</h3>
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1">اللاعب</label>
+                        <select x-model.number="cutForm.playerId" @change="onCutPlayerChange()" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500">
+                            <option value="">— اختر لاعب —</option>
+                            <template x-for="p in players.filter(x => !(x.cut && x.cut.active))" :key="p.id">
+                                <option :value="p.id" x-text="p.name + ' (' + p.category + ')'"></option>
+                            </template>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1">البروتوكول</label>
+                        <select x-model="cutForm.protocol" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500">
+                            <template x-for="pr in protocolList" :key="pr.id">
+                                <option :value="pr.id" :disabled="pr.adultsOnly && cutFormMinor" x-text="pr.name"></option>
+                            </template>
+                        </select>
+                        <div x-show="cutFormMinor" class="text-[11px] text-sky-300 mt-1">اللاعب دون 18 سنة: البروتوكول التدريجي فقط.</div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="block text-xs text-slate-400 mb-1">تاريخ الوزنية</label>
+                            <input type="date" x-model="cutForm.weighInDate" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-slate-400 mb-1">الوزن المطلوب (كجم)</label>
+                            <input type="number" step="0.1" x-model.number="cutForm.target" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500">
+                        </div>
+                    </div>
+                    <button @click="addToCut()" class="w-full bg-amber-600 hover:bg-amber-500 text-white py-2.5 rounded-xl text-sm font-semibold transition">إضافة إلى قطع الوزن</button>
+
+                    <details class="text-xs text-slate-300 bg-slate-900 border border-slate-800 rounded-xl p-3">
+                        <summary class="cursor-pointer font-bold text-rose-300">🚫 المحظورات وعلامات التوقف</summary>
+                        <div class="mt-2 space-y-2">
+                            <div><span class="font-bold text-rose-300">ممنوع نهائياً:</span> تقييد أو حجب الماء، الساونا، البدلة المطاطية، المدرّات والملينات، القيء، الصيام الطويل، وأي تجفيف سريع.</div>
+                            <div><span class="font-bold text-sky-300">دون 18 سنة:</span> بروتوكول تدريجي فقط، مع علم المدرب وولي الأمر.</div>
+                            <div><span class="font-bold text-amber-300">أوقف فوراً وراجع الطبيب عند:</span> دوخة، تشنجات، بول داكن جداً، خفقان، إجهاد شديد غير معتاد، تغير واضح في المزاج، أو انقطاع الدورة عند اللاعبات.</div>
+                        </div>
+                    </details>
+                </div>
+
+                <!-- Cut cards -->
+                <div class="lg:col-span-2 space-y-3">
+                    <template x-if="cutPlayers.length === 0">
+                        <div class="h-full flex items-center justify-center text-slate-500 text-sm py-10 border border-dashed border-slate-800 rounded-2xl">لا يوجد لاعبون في مرحلة قطع الوزن حالياً.</div>
+                    </template>
+                    <template x-for="p in cutPlayers" :key="p.id">
+                        <div class="bg-slate-950 border border-slate-800 rounded-2xl p-4 space-y-3">
+                            <div class="flex flex-wrap items-start justify-between gap-2">
+                                <div>
+                                    <div class="font-bold text-white" x-text="p.name"></div>
+                                    <div class="text-xs text-slate-400" x-text="p.club + ' | ' + p.category"></div>
+                                    <div class="text-[11px] text-amber-300 mt-0.5" x-text="cutInfo(p).proto.name"></div>
+                                </div>
+                                <div class="text-center">
+                                    <div class="text-2xl font-black" :class="cutInfo(p).color" x-text="cutInfo(p).daysLabel"></div>
+                                    <div class="text-[11px] text-slate-500" x-text="'الوزنية: ' + p.cut.weighInDate"></div>
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
+                                <div class="bg-slate-900 rounded-lg p-2"><div class="text-slate-400">بدأ بـ</div><div class="font-bold text-white" x-text="p.cut.startWeight + ' كج'"></div></div>
+                                <div class="bg-slate-900 rounded-lg p-2"><div class="text-slate-400">الحالي</div><div class="font-bold text-emerald-400" x-text="p.currentWeight + ' كج'"></div></div>
+                                <div class="bg-slate-900 rounded-lg p-2"><div class="text-slate-400">المطلوب</div><div class="font-bold text-amber-300" x-text="p.cut.targetWeight + ' كج'"></div></div>
+                                <div class="bg-slate-900 rounded-lg p-2"><div class="text-slate-400">المتبقي / المعدل</div><div class="font-bold" :class="cutInfo(p).color" x-text="Math.max(0, cutInfo(p).diff).toFixed(1) + ' كج' + (cutInfo(p).weeklyPct !== null ? ' · ' + cutInfo(p).weeklyPct.toFixed(2) + '%/أسبوع' : '')"></div></div>
+                            </div>
+
+                            <div class="rounded-xl border p-2 text-xs" :class="cutInfo(p).box">
+                                <div class="font-bold" x-text="cutInfo(p).title"></div>
+                                <ul class="list-disc pr-5 mt-1 space-y-0.5">
+                                    <template x-for="n in cutInfo(p).notes" :key="n"><li x-text="n"></li></template>
+                                </ul>
+                            </div>
+
+                            <div class="bg-slate-900 rounded-xl p-3 border border-slate-800">
+                                <div class="text-xs font-bold text-amber-300" x-text="'📍 مرحلة اليوم: ' + cutInfo(p).phase.title"></div>
+                                <div class="text-[11px] text-slate-400 mt-0.5" x-text="'السعرات المقترحة ~' + cutInfo(p).phaseKcal + ' كالوري | بروتين ' + Math.round(p.currentWeight * 2.2) + ' جم'"></div>
+                                <ul class="list-disc pr-5 mt-2 space-y-0.5 text-xs text-slate-300">
+                                    <template x-for="it in cutInfo(p).phase.items" :key="it"><li x-text="it"></li></template>
+                                </ul>
+                            </div>
+
+                            <details class="text-xs">
+                                <summary class="cursor-pointer text-slate-400 hover:text-slate-200">عرض كل مراحل البروتوكول</summary>
+                                <div class="mt-2 space-y-2">
+                                    <template x-for="ph in cutInfo(p).phases" :key="ph.key">
+                                        <div class="bg-slate-900 rounded-lg p-2 border border-slate-800">
+                                            <div class="font-bold text-amber-300" x-text="ph.title + ' — ' + ph.when"></div>
+                                            <ul class="list-disc pr-5 mt-1 space-y-0.5 text-slate-300">
+                                                <template x-for="it in ph.items" :key="it"><li x-text="it"></li></template>
+                                            </ul>
+                                        </div>
+                                    </template>
+                                </div>
+                            </details>
+
+                            <div class="flex flex-wrap gap-2">
+                                <button @click="openTrack(p)" class="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-xl text-xs font-semibold transition">📈 تسجيل الوزن / المتابعة</button>
+                                <button @click="applyCutToPlan(p)" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-xl text-xs border border-slate-700 transition">تطبيق سعرات المرحلة على الخطة</button>
+                                <button @click="removeCut(p)" class="bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 px-3 py-1.5 rounded-xl text-xs border border-rose-500/20 transition">إنهاء قطع الوزن</button>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </section>
+
+        <!-- Stats -->
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 no-print">
+            <div class="bg-slate-900 p-5 rounded-2xl border border-slate-800">
+                <p class="text-slate-400 text-xs">إجمالي اللاعبين</p>
+                <h3 class="text-3xl font-black text-white mt-1" x-text="players.length"></h3>
+            </div>
+            <div class="bg-slate-900 p-5 rounded-2xl border border-slate-800">
+                <p class="text-slate-400 text-xs">خطط التنشيف (Cutting)</p>
+                <h3 class="text-3xl font-black text-amber-400 mt-1" x-text="players.filter(p => p.goal === 'تنشيف').length"></h3>
+            </div>
+            <div class="bg-slate-900 p-5 rounded-2xl border border-slate-800">
+                <p class="text-slate-400 text-xs">خطط التضخيم (Bulking)</p>
+                <h3 class="text-3xl font-black text-emerald-400 mt-1" x-text="players.filter(p => p.goal === 'تضخيم').length"></h3>
+            </div>
+            <div class="bg-slate-900 p-5 rounded-2xl border border-slate-800">
+                <p class="text-slate-400 text-xs">متوسط الالتزام</p>
+                <h3 class="text-3xl font-black text-blue-400 mt-1" x-text="getAverageCompliance() + '%'"></h3>
+            </div>
+        </div>
+
+        <!-- Chart -->
+        <div class="chart-section bg-slate-900 p-6 rounded-2xl border border-slate-800">
+            <h2 class="text-base font-bold text-white mb-1">متابعة الالتزام</h2>
+            <p class="text-xs text-slate-400 mb-4">يتحدث تلقائياً مع البحث والفلتر وأي تعديل</p>
+            <div class="relative h-64 w-full"><canvas id="complianceChart"></canvas></div>
+        </div>
+
+        <!-- Filters -->
+        <div class="filter-bar bg-slate-900 p-4 rounded-2xl border border-slate-800 flex flex-col sm:flex-row gap-3 justify-between items-center">
+            <input type="text" x-model="searchQuery" placeholder="بحث باسم اللاعب أو النادي..." class="w-full sm:w-80 bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500">
+            <div class="flex gap-2 w-full sm:w-auto overflow-x-auto">
+                <template x-for="c in ['الكل','نادي الحريق','نادي النصر']" :key="c">
+                    <button @click="filterClub = c" :class="filterClub === c ? 'bg-emerald-600 text-white' : 'bg-slate-950 text-slate-400 border border-slate-800'" class="px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition" x-text="c === 'الكل' ? 'جميع الأندية' : c"></button>
+                </template>
+                <select x-model="filterGoal" class="bg-slate-950 border border-slate-800 rounded-xl px-2 py-1.5 text-xs text-slate-300">
+                    <option value="الكل">كل الأهداف</option>
+                    <option value="تنشيف">تنشيف</option>
+                    <option value="تضخيم">تضخيم</option>
+                    <option value="تثبيت">تثبيت</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Table -->
+        <div class="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden shadow-2xl">
+            <div class="overflow-x-auto">
+                <table class="w-full text-right border-collapse">
+                    <thead>
+                        <tr class="bg-slate-950/80 text-slate-400 text-xs border-b border-slate-800">
+                            <th class="py-4 px-5">اللاعب / الفئة</th>
+                            <th class="py-4 px-3">الأوزان</th>
+                            <th class="py-4 px-3">الماكروز</th>
+                            <th class="py-4 px-5">الوجبات</th>
+                            <th class="py-4 px-4">المكملات والترطيب</th>
+                            <th class="py-4 px-5 text-center no-print">إجراءات</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-800 text-sm">
+                        <template x-for="player in filteredPlayers" :key="player.id">
+                            <tr class="hover:bg-slate-800/30 transition align-top">
+                                <td class="py-4 px-5">
+                                    <div class="font-bold text-white text-base" x-text="player.name"></div>
+                                    <div class="text-xs text-slate-400 mt-0.5" x-text="player.club + ' | ' + player.category"></div>
+                                    <div class="mt-2 flex flex-wrap gap-1.5 items-center">
+                                        <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold"
+                                            :class="{
+                                                'bg-amber-500/10 text-amber-400 border border-amber-500/20': player.goal === 'تنشيف',
+                                                'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20': player.goal === 'تضخيم',
+                                                'bg-blue-500/10 text-blue-400 border border-blue-500/20': player.goal === 'تثبيت'
+                                            }" x-text="player.goal"></span>
+                                        <span class="text-xs text-slate-400" x-text="'مواليد ' + player.birthYear"></span>
+                                    </div>
+                                    <div class="mt-2 space-y-1">
+                                        <template x-for="f in flagsFor(player)" :key="f">
+                                            <div class="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-lg px-2 py-1" x-text="'⚠ ' + f"></div>
+                                        </template>
+                                    </div>
+                                </td>
+                                <td class="py-4 px-3 text-xs">
+                                    <div class="text-slate-200"><span class="text-slate-400">الحالي:</span> <strong class="text-emerald-400" x-text="player.currentWeight + ' كج'"></strong></div>
+                                    <div class="text-slate-400 mt-1" x-text="'المستهدف: ' + player.targetWeight + ' كج'"></div>
+                                </td>
+                                <td class="py-4 px-3 text-xs">
+                                    <div class="mb-2 bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-2">
+                                        <div class="text-[10px] text-emerald-300">الإجمالي مع المكملات</div>
+                                        <div class="font-black text-emerald-400" x-text="grandTotals(player).kcal + ' كالوري'"></div>
+                                        <div class="text-[11px] text-slate-300" x-text="'P ' + grandTotals(player).protein + ' · C ' + grandTotals(player).carbs + ' · F ' + grandTotals(player).fats"></div>
+                                        <div class="text-[10px] text-slate-400" x-text="'منها مكملات: ' + suppTotals(player).kcal + ' كالوري'"></div>
+                                    </div>
+                                    <div class="text-[10px] text-slate-500">خطة الغذاء</div>
+                                    <div class="font-bold text-white mb-1" x-text="player.calories + ' كالوري'"></div>
+                                    <div class="bg-slate-950 p-2 rounded-xl border border-slate-800 space-y-0.5 text-slate-300">
+                                        <div>P: <span class="text-emerald-400 font-bold" x-text="player.protein + 'g'"></span></div>
+                                        <div>C: <span class="text-blue-400 font-bold" x-text="player.carbs + 'g'"></span></div>
+                                        <div>F: <span class="text-amber-400 font-bold" x-text="player.fats + 'g'"></span></div>
+                                    </div>
+                                </td>
+                                <td class="py-4 px-5 text-xs">
+                                    <div class="space-y-2 bg-slate-950 p-3 rounded-xl border border-slate-800 max-h-48 overflow-y-auto">
+                                        <div><span class="font-bold text-amber-300">🍳 الفطور:</span><p class="text-slate-300 mt-0.5" x-text="player.meals.breakfast"></p></div>
+                                        <div class="border-t border-slate-800 pt-1.5"><span class="font-bold text-emerald-300">🍗 الغداء:</span><p class="text-slate-300 mt-0.5" x-text="player.meals.lunch"></p></div>
+                                        <div class="border-t border-slate-800 pt-1.5"><span class="font-bold text-blue-300">🐟 العشاء:</span><p class="text-slate-300 mt-0.5" x-text="player.meals.dinner"></p></div>
+                                        <div class="border-t border-slate-800 pt-1.5"><span class="font-bold text-cyan-300">🍌 قبل التمرين:</span><p class="text-slate-300 mt-0.5" x-text="player.meals.preWorkout"></p></div>
+                                    </div>
+                                </td>
+                                <td class="py-4 px-4 text-xs space-y-2">
+                                    <div class="space-y-1 max-h-28 overflow-y-auto">
+                                        <template x-for="supp in player.supplements" :key="supp.id">
+                                            <div class="bg-slate-950 p-1.5 rounded border border-slate-800 flex justify-between items-center text-[11px] gap-2">
+                                                <span class="font-semibold text-emerald-300" x-text="supp.name"></span>
+                                                <span class="text-slate-300 bg-slate-900 px-1.5 py-0.5 rounded text-left" x-text="supp.dose + ' · ' + suppLine(supp)"></span>
+                                            </div>
+                                        </template>
+                                    </div>
+                                    <div class="bg-slate-950 p-2 rounded-lg border border-slate-800 space-y-1">
+                                        <div class="flex justify-between"><span class="text-slate-400">ماء اليوم:</span> <strong class="text-blue-300" x-text="player.waterDaily + ' لتر'"></strong></div>
+                                        <div class="flex justify-between"><span class="text-slate-400">ماء التمرين:</span> <strong class="text-cyan-300" x-text="player.waterWorkout"></strong></div>
+                                    </div>
+                                    <div>
+                                        <div class="flex justify-between mb-1"><span class="text-slate-400">الالتزام:</span><span class="font-bold text-emerald-400" x-text="player.compliance + '%'"></span></div>
+                                        <div class="w-full bg-slate-950 rounded-full h-2 overflow-hidden border border-slate-800">
+                                            <div class="bg-emerald-500 h-full transition-all duration-500" :style="`width: ${player.compliance}%`"></div>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td class="py-4 px-5 text-center no-print">
+                                    <div class="flex flex-col gap-2">
+                                        <button @click="selectedId = player.id; window.scrollTo({top: 0, behavior: 'smooth'})" class="bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 px-3 py-1.5 rounded-xl text-xs transition border border-emerald-500/20">حساب سريع</button>
+                                        <button @click="openTrack(player)" class="bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 px-3 py-1.5 rounded-xl text-xs transition border border-sky-500/20">📈 متابعة</button>
+                                        <button @click="quickCut(player)" class="bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 px-3 py-1.5 rounded-xl text-xs transition border border-amber-500/20">⚖️ قطع الوزن</button>
+                                        <button @click="editPlayer(player)" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-xl text-xs transition border border-slate-700">تعديل</button>
+                                        <button @click="deletePlayer(player.id)" class="bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 px-3 py-1.5 rounded-xl text-xs transition border border-rose-500/20">حذف</button>
+                                    </div>
+                                </td>
+                            </tr>
+                        </template>
+                        <template x-if="filteredPlayers.length === 0">
+                            <tr><td colspan="6" class="py-12 text-center text-slate-400">لا توجد نتائج مطابقة.</td></tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <!-- Tracking Modal -->
+    <div x-show="trackId" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 overflow-y-auto" style="display:none;">
+        <div class="bg-slate-900 border border-slate-800 w-full max-w-3xl rounded-3xl shadow-2xl overflow-hidden my-8" @click.away="closeTrack()">
+            <div class="bg-slate-950 px-6 py-4 border-b border-slate-800 flex justify-between items-center">
+                <h3 class="font-bold text-base text-white" x-text="'📈 متابعة اللاعب: ' + (trackPlayer ? trackPlayer.name : '')"></h3>
+                <button @click="closeTrack()" class="text-slate-400 hover:text-white text-lg">✕</button>
+            </div>
+            <div class="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
+                <div class="text-xs bg-slate-950 border border-slate-800 rounded-xl p-3 text-slate-300 space-y-1">
+                    <div class="font-bold text-emerald-400">طريقة التتبع المقترحة</div>
+                    <ul class="list-disc pr-5 space-y-0.5">
+                        <li>الوزن يومياً: نفس الوقت، صباحاً بعد الحمام وقبل الأكل والشرب، وبنفس الميزان.</li>
+                        <li>اعتمد على متوسط 7 أيام وليس وزن يوم واحد (الماء والأكل يغيّران اليومي).</li>
+                        <li>الالتزام: قيّم يومك بحسب الوجبات والمكملات والماء والنوم.</li>
+                        <li>راجع المعدل الأسبوعي مرة كل أسبوع، وعدّل السعرات إذا خرج اللاعب عن المسار.</li>
+                    </ul>
+                </div>
+
+                <form @submit.prevent="addLog()" class="grid grid-cols-2 sm:grid-cols-5 gap-2 items-end">
+                    <div><label class="block text-xs text-slate-400 mb-1">التاريخ</label><input type="date" x-model="trackForm.date" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"></div>
+                    <div><label class="block text-xs text-slate-400 mb-1">الوزن (كجم)</label><input type="number" step="0.1" x-model.number="trackForm.weight" required class="w-full bg-slate-950 border border-slate-800 rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"></div>
+                    <div><label class="block text-xs text-slate-400 mb-1">الالتزام</label>
+                        <select x-model.number="trackForm.adherence" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-2 py-2 text-xs text-white focus:outline-none">
+                            <option :value="100">ممتاز (100)</option>
+                            <option :value="85">جيد (85)</option>
+                            <option :value="70">متوسط (70)</option>
+                            <option :value="50">ضعيف (50)</option>
+                            <option :value="20">لم يلتزم (20)</option>
+                        </select></div>
+                    <div><label class="block text-xs text-slate-400 mb-1">ملاحظة</label><input type="text" x-model="trackForm.note" placeholder="اختياري" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"></div>
+                    <button type="submit" class="bg-emerald-600 hover:bg-emerald-500 text-white py-2 rounded-xl text-xs font-semibold transition">إضافة</button>
+                </form>
+
+                <template x-if="trackStats">
+                    <div class="space-y-2">
+                        <div class="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center text-xs">
+                            <div class="bg-slate-950 border border-slate-800 rounded-xl p-2"><div class="text-slate-400">آخر وزن</div><div class="font-black text-white text-base" x-text="trackStats.last + ' كج'"></div></div>
+                            <div class="bg-slate-950 border border-slate-800 rounded-xl p-2"><div class="text-slate-400">متوسط 7 أيام</div><div class="font-black text-emerald-400 text-base" x-text="trackStats.avg7.toFixed(1) + ' كج'"></div></div>
+                            <div class="bg-slate-950 border border-slate-800 rounded-xl p-2"><div class="text-slate-400">تغير عن الأسبوع السابق</div><div class="font-black text-base" :class="trackStats.warn ? 'text-amber-400' : 'text-white'" x-text="trackStats.delta === null ? '—' : (trackStats.delta > 0 ? '+' : '') + trackStats.delta.toFixed(2) + ' كج'"></div></div>
+                            <div class="bg-slate-950 border border-slate-800 rounded-xl p-2"><div class="text-slate-400">المتبقي للهدف</div><div class="font-black text-amber-300 text-base" x-text="trackStats.toTarget.toFixed(1) + ' كج'"></div></div>
+                            <div class="bg-slate-950 border border-slate-800 rounded-xl p-2"><div class="text-slate-400">الالتزام (آخر 7)</div><div class="font-black text-blue-400 text-base" x-text="trackStats.adh + '%'"></div></div>
+                        </div>
+                        <div x-show="trackStats.warn" class="text-xs text-amber-200 bg-amber-500/10 border border-amber-500/30 rounded-xl p-2" x-text="trackStats.warn"></div>
+                    </div>
+                </template>
+
+                <div class="relative h-56 w-full"><canvas id="trackChart"></canvas></div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-right text-xs">
+                        <thead><tr class="text-slate-400 border-b border-slate-800"><th class="py-2 px-2">التاريخ</th><th class="py-2 px-2">الوزن</th><th class="py-2 px-2">الالتزام</th><th class="py-2 px-2">ملاحظة</th><th class="py-2 px-2"></th></tr></thead>
+                        <tbody class="divide-y divide-slate-800">
+                            <template x-for="e in (trackPlayer ? [...(trackPlayer.log || [])].reverse() : [])" :key="e.date">
+                                <tr>
+                                    <td class="py-1.5 px-2 text-slate-300" x-text="e.date"></td>
+                                    <td class="py-1.5 px-2 font-bold text-white" x-text="e.weight + ' كج'"></td>
+                                    <td class="py-1.5 px-2 text-slate-300" x-text="e.adherence + '%'"></td>
+                                    <td class="py-1.5 px-2 text-slate-400" x-text="e.note || '—'"></td>
+                                    <td class="py-1.5 px-2"><button @click="deleteLog(e.date)" class="text-rose-400 hover:text-rose-300">حذف</button></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                    <div x-show="trackPlayer && (!trackPlayer.log || trackPlayer.log.length === 0)" class="text-center text-slate-500 text-xs py-4">لا توجد قياسات بعد — أضف أول وزن.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add/Edit Modal -->
+    <div x-show="isModalOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 overflow-y-auto" style="display:none;">
+        <div class="bg-slate-900 border border-slate-800 w-full max-w-4xl rounded-3xl shadow-2xl overflow-hidden my-8" @click.away="closeModal()">
+            <div class="bg-slate-950 px-6 py-4 border-b border-slate-800 flex justify-between items-center">
+                <h3 class="font-bold text-base text-white" x-text="isEditMode ? '🧬 تعديل خطة اللاعب' : '🧬 إضافة لاعب جديد'"></h3>
+                <button @click="closeModal()" class="text-slate-400 hover:text-white text-lg">✕</button>
+            </div>
+
+            <form @submit.prevent="savePlayer()" class="p-6 space-y-6 max-h-[80vh] overflow-y-auto">
+                <div class="space-y-3">
+                    <h4 class="text-xs font-bold text-emerald-400">1. بيانات اللاعب والهدف</h4>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div><label class="block text-xs text-slate-400 mb-1">اسم اللاعب</label>
+                            <input type="text" x-model="form.name" required class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"></div>
+                        <div><label class="block text-xs text-slate-400 mb-1">النادي</label>
+                            <input type="text" x-model="form.club" required list="clubs" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500">
+                            <datalist id="clubs"><option value="نادي الحريق"><option value="نادي النصر"></datalist></div>
+                        <div><label class="block text-xs text-slate-400 mb-1">الفئة / الوزنية</label>
+                            <input type="text" x-model="form.category" required class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"></div>
+                        <div><label class="block text-xs text-slate-400 mb-1">سنة الميلاد</label>
+                            <input type="number" x-model.number="form.birthYear" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"></div>
+                        <div><label class="block text-xs text-slate-400 mb-1">الوزن الحالي (كجم)</label>
+                            <input type="number" step="0.1" x-model.number="form.currentWeight" @input="autoCalculateMacros()" required class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"></div>
+                        <div><label class="block text-xs text-slate-400 mb-1">الوزن المستهدف (كجم)</label>
+                            <input type="number" step="0.1" x-model.number="form.targetWeight" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"></div>
+                        <div><label class="block text-xs text-slate-400 mb-1">الهدف</label>
+                            <select x-model="form.goal" @change="autoCalculateMacros()" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500">
+                                <option value="تنشيف">تنشيف (Cutting)</option>
+                                <option value="تضخيم">تضخيم (Bulking)</option>
+                                <option value="تثبيت">تثبيت (Maintenance)</option>
+                            </select></div>
+                    </div>
+                </div>
+
+                <div class="border-t border-slate-800 pt-4 space-y-3">
+                    <div class="flex justify-between items-center">
+                        <h4 class="text-xs font-bold text-emerald-400">2. السعرات والماكروز</h4>
+                        <button type="button" @click="autoCalculateMacros(true)" class="text-xs bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 px-3 py-1 rounded-lg border border-emerald-500/20 transition">حساب آلي + توليد الوجبات</button>
+                    </div>
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <div><label class="block text-xs text-slate-400 mb-1">السعرات</label><input type="number" x-model.number="form.calories" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-emerald-400 font-bold focus:outline-none"></div>
+                        <div><label class="block text-xs text-slate-400 mb-1">بروتين (g)</label><input type="number" x-model.number="form.protein" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none"></div>
+                        <div><label class="block text-xs text-slate-400 mb-1">كارب (g)</label><input type="number" x-model.number="form.carbs" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none"></div>
+                        <div><label class="block text-xs text-slate-400 mb-1">دهون (g)</label><input type="number" x-model.number="form.fats" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none"></div>
+                    </div>
+                </div>
+
+                <div class="border-t border-slate-800 pt-4 space-y-3">
+                    <h4 class="text-xs font-bold text-emerald-400">3. الوجبات اليومية</h4>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-950 p-4 rounded-2xl border border-slate-800">
+                        <div><label class="block text-xs text-amber-300 mb-1">🍳 الفطور</label><textarea x-model="form.meals.breakfast" rows="2" class="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"></textarea></div>
+                        <div><label class="block text-xs text-emerald-300 mb-1">🍗 الغداء</label><textarea x-model="form.meals.lunch" rows="2" class="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"></textarea></div>
+                        <div><label class="block text-xs text-blue-300 mb-1">🐟 العشاء</label><textarea x-model="form.meals.dinner" rows="2" class="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"></textarea></div>
+                        <div><label class="block text-xs text-cyan-300 mb-1">🍌 قبل التمرين</label><textarea x-model="form.meals.preWorkout" rows="2" class="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"></textarea></div>
+                    </div>
+                </div>
+
+                <div class="border-t border-slate-800 pt-4 space-y-3">
+                    <div class="flex justify-between items-center">
+                        <h4 class="text-xs font-bold text-emerald-400">4. المكملات</h4>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <span class="text-[11px] text-slate-400" x-text="'مكملات: ' + suppTotals(form).kcal + ' كالوري | الإجمالي مع الخطة: ' + grandTotals(form).kcal"></span>
+                            <select @change="addFromLibrary($event.target.value); $event.target.value = ''" class="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-200">
+                                <option value="">+ من قائمة المكملات</option>
+                                <template x-for="s in suppLibrary" :key="s.name"><option :value="s.name" x-text="s.name + ' — ' + s.dose"></option></template>
+                            </select>
+                            <button type="button" @click="addSupplementRow()" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs px-3 py-1.5 rounded-lg font-semibold">＋ مكمل مخصص</button>
+                        </div>
+                    </div>
+                    <div class="space-y-2 bg-slate-950 p-4 rounded-2xl border border-slate-800">
+                        <template x-for="(supp, index) in form.supplements" :key="supp.id">
+                            <div class="flex flex-col gap-2 bg-slate-900 p-3 rounded-xl border border-slate-800">
+                              <div class="flex flex-col sm:flex-row gap-2 items-center w-full">
+                                <input type="text" x-model="supp.name" placeholder="اسم المكمل" class="w-full sm:w-1/3 bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none">
+                                <input type="text" x-model="supp.dose" placeholder="الجرعة" class="w-full sm:w-1/4 bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none">
+                                <input type="text" x-model="supp.timing" placeholder="التوقيت" class="w-full sm:w-1/3 bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none">
+                                <button type="button" @click="removeSupplementRow(index)" class="text-rose-400 hover:text-rose-300 px-2 py-1 text-xs">✕</button>
+                              </div>
+                              <div class="grid grid-cols-4 gap-2 w-full">
+                                <div><label class="block text-[10px] text-slate-500 mb-0.5">بروتين (g)</label><input type="number" step="0.1" x-model.number="supp.protein" @input="recalcSupp(supp)" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-xs text-emerald-300 focus:outline-none"></div>
+                                <div><label class="block text-[10px] text-slate-500 mb-0.5">كارب (g)</label><input type="number" step="0.1" x-model.number="supp.carbs" @input="recalcSupp(supp)" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-xs text-blue-300 focus:outline-none"></div>
+                                <div><label class="block text-[10px] text-slate-500 mb-0.5">دهون (g)</label><input type="number" step="0.1" x-model.number="supp.fats" @input="recalcSupp(supp)" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-xs text-amber-300 focus:outline-none"></div>
+                                <div><label class="block text-[10px] text-slate-500 mb-0.5">سعرات (kcal)</label><input type="number" step="1" x-model.number="supp.kcal" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-xs text-white font-bold focus:outline-none"></div>
+                              </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <div class="border-t border-slate-800 pt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div><label class="block text-xs text-slate-400 mb-1">ماء اليوم (لتر)</label><input type="number" step="0.5" x-model.number="form.waterDaily" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-blue-300 focus:outline-none"></div>
+                    <div><label class="block text-xs text-slate-400 mb-1">ماء التمرين</label><input type="text" x-model="form.waterWorkout" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-cyan-300 focus:outline-none"></div>
+                    <div><label class="block text-xs text-slate-400 mb-1">الالتزام (%)</label><input type="number" min="0" max="100" x-model.number="form.compliance" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none"></div>
+                </div>
+
+                <div class="flex justify-end gap-3 pt-4 border-t border-slate-800">
+                    <button type="button" @click="closeModal()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-5 py-2.5 rounded-xl text-sm border border-slate-700">إلغاء</button>
+                    <button type="submit" class="bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-2.5 rounded-xl text-sm font-semibold shadow-lg shadow-emerald-900/30">حفظ</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const STORAGE_KEY = 'championship_players_all_v2';
+        let complianceChart = null;
+        let trackChart = null;
+
+        // ---------- Calculation helpers ----------
+        const KCAL_PER_KG = { 'تنشيف': 31, 'تضخيم': 37, 'تثبيت': 34 };
+
+        function macrosFor(w, goal) {
+            const kcal = Math.round(w * (KCAL_PER_KG[goal] || 34));
+            const protein = Math.floor(w * 2.2);
+            const fats = Math.floor(w * 0.9);
+            const carbs = Math.max(0, Math.floor((kcal - protein * 4 - fats * 9) / 4));
+            return { calories: kcal, protein, fats, carbs };
+        }
+
+        function mealsFor(w, goal) {
+            if (goal === 'تضخيم') {
+                return {
+                    breakfast: `4 بيضات كاملة + ${Math.floor(w * 1.1)} جرام شوفان بحليب كامل الدسم وملعقة زبدة فول سوداني + موزتين`,
+                    lunch: `${Math.floor(w * 3.2)} جرام لحم أو دجاج + ${Math.floor(w * 3.5)} جرام أرز أبيض أو باستا + زيت زيتون`,
+                    dinner: `${Math.floor(w * 3)} جرام دجاج أو لحم + ${Math.floor(w * 3)} جرام بطاطس بالفرن + كوب لبن`,
+                    preWorkout: 'سندوتش توست بر بزبدة الفول السوداني والعسل + كوب عصير'
+                };
+            }
+            return {
+                breakfast: `3 بيضات كاملة + بياض بيضتين + ${Math.max(40, Math.floor(w * 0.7))} جرام شوفان + حبة فواكه`,
+                lunch: `${Math.floor(w * 2.5)} جرام صدر دجاج مشوي + ${Math.floor(w * 2.5)} جرام أرز أبيض + بروكلي وخضار`,
+                dinner: `${Math.floor(w * 2.4)} جرام سمك أو تونة + ${Math.floor(w * 1.8)} جرام بطاطس مسلوقة + سلطة خضراء`,
+                preWorkout: 'موزة واحدة + 2 تمرات أو توست بر وعسل'
+            };
+        }
+
+        // قيم تقريبية للجرعة الواحدة — عدّلها حسب ملصق المنتج الفعلي
+        const SUPP_LIBRARY = [
+            { name: 'كرياتين مونوهيدرات', dose: '5 جرام', timing: 'يومياً مع الإفطار', kcal: 0, protein: 0, carbs: 0, fats: 0 },
+            { name: 'واي بروتين', dose: 'سكوب (30g)', timing: 'بعد التمرين مباشرة', kcal: 120, protein: 24, carbs: 3, fats: 1.5 },
+            { name: 'إلكترولايتس', dose: 'حصة واحدة', timing: 'أثناء التمرين الشاق', kcal: 10, protein: 0, carbs: 2, fats: 0 },
+            { name: 'BCAA / EAA', dose: '10 جرام', timing: 'أثناء التمرين', kcal: 40, protein: 10, carbs: 0, fats: 0 },
+            { name: 'كارب سريع (مالتوديكسترين)', dose: '40 جرام', timing: 'أثناء/بعد التمرين', kcal: 152, protein: 0, carbs: 38, fats: 0 },
+            { name: 'جل رياضي', dose: 'عبوة واحدة', timing: 'أثناء المنافسة', kcal: 90, protein: 0, carbs: 22, fats: 0 },
+            { name: 'أوميغا 3', dose: '2 كبسولة', timing: 'مع وجبة', kcal: 20, protein: 0, carbs: 0, fats: 2 },
+            { name: 'فيتامين د', dose: 'حسب الوصفة', timing: 'مع وجبة', kcal: 0, protein: 0, carbs: 0, fats: 0 }
+        ];
+
+        const defaultSupps = () => SUPP_LIBRARY.slice(0, 3).map((s, i) => ({ id: i + 1, ...s }));
+
+        function normalizeSupp(s) {
+            const ref = SUPP_LIBRARY.find(x => s.name && s.name.includes(x.name.split(' ')[0]));
+            const pick = k => (s[k] !== undefined && s[k] !== null && s[k] !== '') ? (Number(s[k]) || 0) : (ref ? ref[k] : 0);
+            return { ...s, kcal: pick('kcal'), protein: pick('protein'), carbs: pick('carbs'), fats: pick('fats') };
+        }
+
+        function normalizePlayer(p) {
+            p.supplements = (p.supplements || []).map(normalizeSupp);
+            if (!Array.isArray(p.log)) p.log = [];
+            if (p.cut === undefined) p.cut = null;
+            return p;
+        }
+
+        const r1 = n => Math.round(n * 10) / 10;
+
+        function suppTotals(p) {
+            const t = { kcal: 0, protein: 0, carbs: 0, fats: 0 };
+            (p.supplements || []).forEach(s => {
+                t.kcal += Number(s.kcal) || 0; t.protein += Number(s.protein) || 0;
+                t.carbs += Number(s.carbs) || 0; t.fats += Number(s.fats) || 0;
+            });
+            return { kcal: Math.round(t.kcal), protein: r1(t.protein), carbs: r1(t.carbs), fats: r1(t.fats) };
+        }
+
+        function grandTotals(p) {
+            const s = suppTotals(p);
+            return {
+                kcal: Math.round((Number(p.calories) || 0) + s.kcal),
+                protein: r1((Number(p.protein) || 0) + s.protein),
+                carbs: r1((Number(p.carbs) || 0) + s.carbs),
+                fats: r1((Number(p.fats) || 0) + s.fats)
+            };
+        }
+
+        function suppLine(s) {
+            return `${Number(s.kcal) || 0}ك · P${Number(s.protein) || 0} C${Number(s.carbs) || 0} F${Number(s.fats) || 0}`;
+        }
+
+        function buildPlayer(id, name, club, category, birthYear, w, target, goal, compliance) {
+            return {
+                id, name, club, category, birthYear: String(birthYear),
+                currentWeight: w, targetWeight: target, goal,
+                ...macrosFor(w, goal),
+                waterDaily: 3.5, waterWorkout: '750 مل - 1 لتر',
+                supplements: defaultSupps(),
+                meals: mealsFor(w, goal),
+                compliance
+            };
+        }
+
+        function seedPlayers() {
+            const H = 'نادي الحريق', N = 'نادي النصر';
+            // [id, name, club, category, birthYear, weight, target, goal, compliance]
+            const rows = [
+                [102, 'طه هشام نايته', H, 'أولى - 75 كجم', 2001, 75, 72, 'تنشيف', 90],
+                [103, 'راكان عبدالمحسن عبدالله الشايع', H, 'أولى - 60 كجم', 2002, 60, 57, 'تنشيف', 91],
+                [104, 'إبراهيم جاسم محمد المرزوق', H, 'أولى - فوق 84 كجم', 2002, 84, 81, 'تنشيف', 92],
+                [105, 'اسامه إبراهيم دخيل الله شامان', H, 'أولى - 67 كجم', 2004, 67, 64, 'تنشيف', 93],
+                [106, 'عمر إبراهيم دخيل الله شامان', H, 'اولمبي - 67 كجم', 2006, 67, 69, 'تضخيم', 94],
+                [107, 'سلطان عبدالعزيز بشير البشير', H, 'شباب - 55 كجم', 2009, 55, 52, 'تنشيف', 95],
+                [108, 'زياد احمد خلف المالكي', H, 'شباب - 55 كجم', 2009, 55, 52, 'تنشيف', 96],
+                [109, 'مازن محمد عبدالله المالكي', H, 'ناشئين - فوق 70 كجم', 2011, 70, 72, 'تضخيم', 97],
+                [110, 'سطام حميد مرزوق عبدالخير', H, 'ناشئين - فوق 70 كجم', 2012, 70, 72, 'تضخيم', 88],
+                [111, 'علي عيسى كالو', H, 'ناشئين - تحت 70 كجم', 2012, 70, 72, 'تضخيم', 89],
+                [112, 'عبدالرحمن علي غنيمي', H, 'ناشئين - 52 كجم', 2012, 52, 54, 'تضخيم', 90],
+                [113, 'حاكم خالد عبدالله الحمدان', H, 'ناشئين - 63 كجم', 2012, 63, 65, 'تضخيم', 91],
+                [114, 'فيصل عبدالله علي هزازي', H, 'ناشئين - 52 كجم', 2012, 52, 54, 'تضخيم', 92],
+                [115, 'صالحة عبيد ظافر الرمثي', H, 'ناشئات - فوق 61 كجم', 2011, 61, 58, 'تنشيف', 93],
+                [116, 'تبتيل محمد عبدالجليل فضل', H, 'ناشئات - 54 كجم', 2011, 54, 51, 'تنشيف', 94],
+                [117, 'منيرة عبدالرحمن مريع سفياني', H, 'ناشئات - 47 كجم', 2012, 47, 50, 'تنشيف', 95],
+                [118, 'حنين حسن محمد عبدالواسع', H, 'ناشئات - تحت 61 كجم', 2011, 61, 58, 'تنشيف', 96],
+                [119, 'امل حسن محمد عبدالواسع', H, 'ناشئات - 54 كجم', 2012, 54, 51, 'تنشيف', 97],
+                [123, 'تركي عبدالله سويد المالكي', N, 'اولمبي - 60 كجم', 2007, 60, 62, 'تضخيم', 91],
+                [124, 'ابراهيم حمد الكثيري', N, 'شباب - 68 كجم', 2009, 68, 65, 'تنشيف', 92],
+                [125, 'سيف مطلق المالكي', N, 'شباب - 55 كجم', 2010, 55, 52, 'تنشيف', 93],
+                [126, 'عبدالله علي غنيمي', N, 'شباب - 55 كجم', 2010, 55, 52, 'تنشيف', 94],
+                [127, 'مرزوق حميد مرزوق عبدالخير', N, 'شباب - 61 كجم', 2010, 61, 58, 'تنشيف', 95],
+                [128, 'عبدالملك عبده احمد حومد', N, 'شباب - 68 كجم', 2010, 68, 65, 'تنشيف', 96],
+                [129, 'لؤي ايمن احمد المالكي', N, 'شباب - 61 كجم', 2010, 61, 58, 'تنشيف', 97],
+                [130, 'محمد مبارك الشهراني', N, 'شباب - تحت 76 كجم', 2009, 76, 73, 'تنشيف', 88]
+            ];
+            return rows.map(r => buildPlayer(...r));
+        }
+
+        function loadPlayers() {
+            try {
+                const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+                if (Array.isArray(saved) && saved.length) return saved.map(normalizePlayer);
+            } catch (e) {}
+            return seedPlayers().map(normalizePlayer);
+        }
+
+        function shortName(n) { return n.split(' ').slice(0, 2).join(' '); }
+
+        function todayStr() {
+            const d = new Date();
+            d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+            return d.toISOString().slice(0, 10);
+        }
+        function ageOf(p) { return new Date().getFullYear() - Number(p.birthYear || 0); }
+
+        // ---------- Weight-cut protocols ----------
+        // تدريجي فقط للقاصرين. لا يتضمن أي تجفيف مائي أو ساونا أو تقييد سوائل.
+        const CUT_PROTOCOLS = [
+            { id: 'gradual', name: 'تدريجي (4 أسابيع فأكثر) — الأنسب والإلزامي لمن دون 18', adultsOnly: false, maxTotalPct: 8, kcalPerKg: 31 },
+            { id: 'short', name: 'مختصر (10–14 يوم) — بالغون 18+ وفرق وزن حتى 3%', adultsOnly: true, maxTotalPct: 3, kcalPerKg: 30 }
+        ];
+
+        const RISK_UI = [
+            { color: 'text-emerald-400', box: 'bg-emerald-500/10 border-emerald-500/30 text-emerald-100', title: '✅ المسار آمن' },
+            { color: 'text-amber-400', box: 'bg-amber-500/10 border-amber-500/30 text-amber-100', title: '⚠️ يحتاج مراجعة' },
+            { color: 'text-rose-400', box: 'bg-rose-500/10 border-rose-500/30 text-rose-100', title: '🛑 خطر مرتفع — يوصى بتعديل الخطة' }
+        ];
+
+        function cutPhases(w, minor, proto) {
+            const R = n => Math.round(n);
+            const k = minor ? 32 : proto.kcalPerKg;
+            const water = `${(w * 0.035).toFixed(1)}–${(w * 0.04).toFixed(1)} لتر`;
+            return [
+                {
+                    key: 'build', title: 'مرحلة العجز الغذائي', when: 'قبل الوزنية بـ 8 أيام فأكثر', test: d => d >= 8, kcalPerKg: k,
+                    items: [
+                        `عجز بسيط: ~${R(w * k)} كالوري/يوم (الصيانة التقديرية ~${R(w * 34)}).`,
+                        `بروتين 2.2–2.4 جم/كجم (${R(w * 2.2)}–${R(w * 2.4)} جم) موزعاً على 4–5 وجبات.`,
+                        `دهون لا تقل عن 0.8 جم/كجم (${R(w * 0.8)} جم) والباقي كارب حول التمرين.`,
+                        `ماء ${water} يومياً + إلكترولايتس في التمارين الشاقة — بدون تقليل.`,
+                        'وزن يومي صباحاً وتسجيل الالتزام. نوم 8 ساعات فأكثر.',
+                        ...(proto.id === 'short' ? ['بروتوكول مختصر: أقصى فرق مسموح 3% من الوزن، وإلا استخدم التدريجي أو غيّر الفئة.'] : [])
+                    ]
+                },
+                {
+                    key: 'week', title: 'أسبوع الوزنية', when: 'من 7 إلى 4 أيام', test: d => d >= 4 && d <= 7, kcalPerKg: k,
+                    items: [
+                        'ثبّت السعرات والماكروز ولا تخفض أكثر.',
+                        'الصوديوم والماء طبيعيان — لا تقليل مفاجئ.',
+                        'خفّف حجم التمارين تدريجياً مع الحفاظ على الشدة.',
+                        'ابدأ تقليل الأطعمة المسببة للانتفاخ (بقوليات، مشروبات غازية).'
+                    ]
+                },
+                {
+                    key: 'lowres', title: 'آخر 3 أيام (خفيفة الألياف)', when: 'من 3 إلى 1 يوم', test: d => d >= 1 && d <= 3, kcalPerKg: k,
+                    items: [
+                        'خفّض الألياف تدريجياً: أرز أبيض، بطاطس مقشرة، دجاج/سمك، بيض، موز، توست أبيض؛ تجنب البقوليات والورقيات الكثيرة والمكسرات.',
+                        `الماء طبيعي (${water}) — لا حجب ولا ساونا.`,
+                        'إن بقي اللاعب فوق الوزن: لا تعوّض بالجفاف — غيّر الفئة أو أجّل.'
+                    ]
+                },
+                {
+                    key: 'weighin', title: 'يوم الوزنية', when: 'يوم 0', test: d => d === 0, kcalPerKg: 34,
+                    items: [
+                        'الوزن بنفس الميزان، بعد الحمام وقبل الوجبة.',
+                        'اشرب بانتظام قبل الوزنية (لا تعطيش).',
+                        'جهّز أطعمة الإعادة: عصير، تمر، موز، أرز أبيض، إلكترولايتس.'
+                    ]
+                },
+                {
+                    key: 'refuel', title: 'بعد الوزنية (إعادة الترطيب والتزود)', when: 'بعد الوزنية', test: d => d < 0, kcalPerKg: 36,
+                    items: [
+                        'السوائل على دفعات (~400–600 مل/ساعة) مع إلكترولايتس؛ للتعويض ~1.25–1.5 لتر لكل 1 كجم مفقود.',
+                        `الوجبة الأولى: كارب ${R(w * 1)}–${R(w * 1.5)} جم سهل الهضم (أرز أبيض، تمر، موز، عصير) + بروتين خفيف (~${R(w * 0.25)} جم).`,
+                        'إذا كان الفاصل 12 ساعة فأكثر: كارب 6–10 جم/كجم خلال 24 ساعة موزعة على وجبات.',
+                        'قبل النزال بساعتين: وجبة خفيفة قليلة الدهون والألياف.'
+                    ]
+                }
+            ];
+        }
+
+        // ---------- Alpine app ----------
+        function nutritionCoachApp() {
+            return {
+                players: loadPlayers(),
+                searchQuery: '',
+                filterClub: 'الكل',
+                filterGoal: 'الكل',
+                isModalOpen: false,
+                isEditMode: false,
+                selectedId: '',
+                qc: { current: 0, target: 0, days: 14 },
+                suppLibrary: SUPP_LIBRARY,
+                protocolList: CUT_PROTOCOLS,
+                cutForm: { playerId: '', protocol: 'gradual', weighInDate: '', target: '' },
+                trackId: '',
+                trackForm: { date: '', weight: 0, adherence: 85, note: '' },
+                form: null,
+
+                init() {
+                    this.form = this.blankForm();
+                    this.$nextTick(() => this.buildChart());
+                    this.$watch('players', () => this.refreshChart(), { deep: true });
+                    this.$watch('searchQuery', () => this.refreshChart());
+                    this.$watch('filterClub', () => this.refreshChart());
+                    this.$watch('filterGoal', () => this.refreshChart());
+                    this.$watch('selectedId', () => {
+                        const p = this.selected;
+                        if (p) { this.qc.current = p.currentWeight; this.qc.target = p.targetWeight; }
+                    });
+                },
+
+                get selected() {
+                    if (!this.selectedId) return null;
+                    return this.players.find(p => p.id === this.selectedId) || null;
+                },
+
+                get filteredPlayers() {
+                    const q = this.searchQuery.trim().toLowerCase();
+                    return this.players.filter(p =>
+                        (!q || p.name.toLowerCase().includes(q) || p.club.toLowerCase().includes(q)) &&
+                        (this.filterClub === 'الكل' || p.club === this.filterClub) &&
+                        (this.filterGoal === 'الكل' || p.goal === this.filterGoal)
+                    );
+                },
+
+                // Quick weight-cut calculation
+                get calc() {
+                    const p = this.selected;
+                    const cur = Number(this.qc.current), tgt = Number(this.qc.target), days = Math.max(1, Number(this.qc.days) || 1);
+                    if (!p || !cur || !tgt) return null;
+
+                    const age = new Date().getFullYear() - Number(p.birthYear || 0);
+                    const minor = age < 18;
+                    const diff = +(cur - tgt).toFixed(2);          // + = loss, - = gain
+                    const pct = (diff / cur) * 100;
+                    const weeks = days / 7;
+                    const weeklyKg = diff / weeks;
+                    const weeklyPct = pct / weeks;
+                    const maintenance = Math.round(cur * 34);
+                    const dailyDeficit = (diff * 7700) / days;     // + deficit, - surplus
+                    const goal = diff > 0 ? 'تنشيف' : (diff < 0 ? 'تضخيم' : 'تثبيت');
+
+                    let kcal = Math.round(maintenance - dailyDeficit);
+                    const floor = Math.round(cur * 30);            // low-energy-availability guard
+                    const notes = [];
+                    let level = 0;                                 // 0 ok, 1 caution, 2 high risk
+
+                    if (diff > 0) {
+                        const limit = minor ? 0.7 : 1.0;           // % body weight per week
+                        if (weeklyPct > limit * 1.5) { level = 2; notes.push(`معدل النزول ${weeklyPct.toFixed(2)}% أسبوعياً أعلى بكثير من الحد الآمن (~${limit}%). الأفضل تأجيل الوزنية أو تغيير الفئة الوزنية.`); }
+                        else if (weeklyPct > limit) { level = Math.max(level, 1); notes.push(`معدل النزول ${weeklyPct.toFixed(2)}% أسبوعياً فوق الحد المفضل (~${limit}%).`); }
+                        else notes.push('معدل النزول ضمن الحد الآمن.');
+
+                        if (kcal < floor) { level = Math.max(level, 2); notes.push(`السعرات الناتجة (${kcal}) أقل من ${floor} (30 سعرة/كجم) — خطر نقص الطاقة. تم رفعها إلى الحد الأدنى في الخطة المقترحة.`); kcal = floor; }
+                        if (dailyDeficit > 1000) { level = Math.max(level, 1); notes.push(`العجز اليومي المطلوب ~${Math.round(dailyDeficit)} سعرة وهو مرتفع.`); }
+                        if (pct > 5) { level = Math.max(level, 1); notes.push(`النزول المطلوب ${pct.toFixed(1)}% من الوزن؛ يفضل تقسيمه على مرحلتين أو أكثر.`); }
+                        notes.push('اعتمد على العجز الغذائي التدريجي مع بروتين عالٍ؛ لا يُنصح بالتجفيف المائي أو الصيام قبل الوزنية.');
+                    } else if (diff < 0) {
+                        notes.push(`زيادة تدريجية مطلوبة: ${Math.abs(weeklyKg).toFixed(2)} كجم أسبوعياً${Math.abs(weeklyPct) > 0.5 ? ' (مرتفعة، المعدل المفضل ≤0.5%)' : ''}.`);
+                        if (Math.abs(weeklyPct) > 0.5) level = 1;
+                    } else notes.push('لا يوجد فرق بين الوزن الحالي والمطلوب.');
+
+                    if (minor) notes.push('لاعب دون 18 سنة: يلزم الحرص على النمو والطاقة الكافية، ويفضّل إشراف المدرب وولي الأمر على أي خفض للوزن.');
+                    if (minor && (p.supplements || []).some(s => /كرياتين/.test(s.name))) notes.push('الخطة تتضمن كرياتين للاعب قاصر — راجع القرار مع الأسرة/الإدارة الطبية للنادي.');
+                    if (p.goal !== goal && diff !== 0) notes.push(`هدف الخطة المسجل «${p.goal}» لا يطابق الأوزان المدخلة («${goal}»).`);
+
+                    const protein = Math.floor(cur * 2.2), fats = Math.floor(cur * 0.9);
+                    const carbs = Math.max(0, Math.floor((kcal - protein * 4 - fats * 9) / 4));
+
+                    const styles = [
+                        { c: 'text-emerald-400', box: 'bg-emerald-500/10 border-emerald-500/30 text-emerald-100', t: '✅ الخطة ضمن الحدود الآمنة' },
+                        { c: 'text-amber-400', box: 'bg-amber-500/10 border-amber-500/30 text-amber-100', t: '⚠️ تحتاج مراجعة قبل التطبيق' },
+                        { c: 'text-rose-400', box: 'bg-rose-500/10 border-rose-500/30 text-rose-100', t: '🛑 خطر مرتفع — يوصى بتعديل الخطة' }
+                    ];
+                    return {
+                        age, minor, diff, pct, weeklyKg, weeklyPct, maintenance, kcal, protein, carbs, fats, goal,
+                        notes, statusColor: styles[level].c, boxClass: styles[level].box, statusTitle: styles[level].t
+                    };
+                },
+
+                applyQuickToPlayer() {
+                    const p = this.selected; if (!p) return;
+                    p.currentWeight = Number(this.qc.current);
+                    p.targetWeight = Number(this.qc.target);
+                    this.persist();
+                },
+
+                applyCalcToPlayer() {
+                    const p = this.selected, c = this.calc; if (!p || !c) return;
+                    p.currentWeight = Number(this.qc.current);
+                    p.targetWeight = Number(this.qc.target);
+                    p.goal = c.goal;
+                    p.calories = c.kcal; p.protein = c.protein; p.carbs = c.carbs; p.fats = c.fats;
+                    p.meals = mealsFor(p.currentWeight, p.goal);
+                    this.persist();
+                },
+
+                flagsFor(p) {
+                    const flags = [];
+                    const age = new Date().getFullYear() - Number(p.birthYear || 0);
+                    if (age < 18 && p.goal === 'تنشيف') flags.push('خطة تنشيف للاعب دون 18 سنة — تحتاج إشرافاً');
+                    if (age < 18 && (p.supplements || []).some(s => /كرياتين/.test(s.name))) flags.push('كرياتين للاعب قاصر');
+                    if (p.goal === 'تنشيف' && p.targetWeight > p.currentWeight) flags.push('الهدف تنشيف لكن الوزن المستهدف أعلى من الحالي');
+                    if (p.goal === 'تضخيم' && p.targetWeight < p.currentWeight) flags.push('الهدف تضخيم لكن الوزن المستهدف أقل من الحالي');
+                    return flags;
+                },
+
+                blankForm() {
+                    return {
+                        id: Date.now(), name: '', club: 'نادي النصر', category: '', birthYear: 2008,
+                        currentWeight: 70, targetWeight: 67, goal: 'تنشيف',
+                        ...macrosFor(70, 'تنشيف'),
+                        waterDaily: 3.5, waterWorkout: '750 مل - 1 لتر',
+                        meals: mealsFor(70, 'تنشيف'),
+                        supplements: defaultSupps(),
+                        compliance: 90
+                    };
+                },
+
+                openAddModal() { this.isEditMode = false; this.form = this.blankForm(); this.isModalOpen = true; },
+                editPlayer(p) { this.isEditMode = true; this.form = JSON.parse(JSON.stringify(p)); this.isModalOpen = true; },
+                closeModal() { this.isModalOpen = false; },
+                addSupplementRow() { this.form.supplements.push({ id: Date.now(), name: '', dose: '', timing: '', kcal: 0, protein: 0, carbs: 0, fats: 0 }); },
+                removeSupplementRow(i) { this.form.supplements.splice(i, 1); },
+
+                savePlayer() {
+                    const copy = normalizePlayer(JSON.parse(JSON.stringify(this.form)));
+                    copy.birthYear = String(copy.birthYear);
+                    if (this.isEditMode) {
+                        const i = this.players.findIndex(p => p.id === copy.id);
+                        if (i !== -1) this.players.splice(i, 1, copy);
+                    } else {
+                        copy.id = Date.now();
+                        this.players.unshift(copy);
+                    }
+                    this.persist();
+                    this.closeModal();
+                },
+
+                deletePlayer(id) {
+                    if (!confirm('هل أنت متأكد من حذف هذا اللاعب نهائياً؟')) return;
+                    this.players = this.players.filter(p => p.id !== id);
+                    if (this.selectedId === id) this.selectedId = '';
+                    this.persist();
+                },
+
+                autoCalculateMacros(withMeals = false) {
+                    const w = this.form.currentWeight || 70;
+                    Object.assign(this.form, macrosFor(w, this.form.goal));
+                    if (withMeals) this.form.meals = mealsFor(w, this.form.goal);
+                },
+
+                // ---------- Supplements ----------
+                addFromLibrary(name) {
+                    const s = SUPP_LIBRARY.find(x => x.name === name);
+                    if (s) this.form.supplements.push({ id: Date.now(), ...s });
+                },
+                recalcSupp(s) {
+                    s.kcal = Math.round((Number(s.protein) || 0) * 4 + (Number(s.carbs) || 0) * 4 + (Number(s.fats) || 0) * 9);
+                },
+
+                // ---------- Weight cutting ----------
+                get cutPlayers() { return this.players.filter(p => p.cut && p.cut.active); },
+                get cutFormMinor() {
+                    const p = this.players.find(x => x.id === this.cutForm.playerId);
+                    return p ? ageOf(p) < 18 : false;
+                },
+                onCutPlayerChange() {
+                    const p = this.players.find(x => x.id === this.cutForm.playerId);
+                    if (!p) return;
+                    this.cutForm.target = p.targetWeight < p.currentWeight ? p.targetWeight : '';
+                    if (ageOf(p) < 18) this.cutForm.protocol = 'gradual';
+                },
+                addToCut() {
+                    const p = this.players.find(x => x.id === this.cutForm.playerId);
+                    if (!p) { alert('اختر لاعباً أولاً'); return; }
+                    if (!this.cutForm.weighInDate) { alert('حدد تاريخ الوزنية'); return; }
+                    const target = Number(this.cutForm.target);
+                    if (!target || target >= p.currentWeight) { alert('الوزن المطلوب يجب أن يكون أقل من الوزن الحالي'); return; }
+                    const protocol = ageOf(p) < 18 ? 'gradual' : this.cutForm.protocol;
+                    p.cut = { active: true, protocol, startDate: todayStr(), weighInDate: this.cutForm.weighInDate, startWeight: p.currentWeight, targetWeight: target };
+                    p.targetWeight = target;
+                    p.goal = 'تنشيف';
+                    this.persist();
+                    this.cutForm = { playerId: '', protocol: 'gradual', weighInDate: '', target: '' };
+                },
+                removeCut(p) {
+                    if (!confirm('إنهاء قطع الوزن لهذا اللاعب؟')) return;
+                    p.cut = null;
+                    this.persist();
+                },
+                quickCut(p) {
+                    if (p.cut && p.cut.active) { alert('اللاعب موجود بالفعل في قطع الوزن'); return; }
+                    this.cutForm.playerId = p.id;
+                    this.onCutPlayerChange();
+                    const el = document.getElementById('cut-section');
+                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                },
+                applyCutToPlan(p) {
+                    const info = this.cutInfo(p);
+                    const w = Number(p.currentWeight);
+                    p.calories = info.phaseKcal;
+                    p.protein = Math.floor(w * 2.2);
+                    p.fats = Math.floor(w * 0.9);
+                    p.carbs = Math.max(0, Math.floor((p.calories - p.protein * 4 - p.fats * 9) / 4));
+                    this.persist();
+                },
+                cutInfo(p) {
+                    const c = p.cut;
+                    const proto = CUT_PROTOCOLS.find(x => x.id === c.protocol) || CUT_PROTOCOLS[0];
+                    const minor = ageOf(p) < 18;
+                    const w = Number(p.currentWeight) || 0;
+                    const tgt = Number(c.targetWeight) || Number(p.targetWeight) || w;
+                    const today = new Date(); today.setHours(0, 0, 0, 0);
+                    const wi = c.weighInDate ? new Date(c.weighInDate + 'T00:00:00') : null;
+                    const d = wi ? Math.round((wi - today) / 86400000) : null;
+                    const diff = +(w - tgt).toFixed(2);
+                    const pct = w ? (diff / w) * 100 : 0;
+                    const phases = cutPhases(w, minor, proto);
+                    const phase = (d === null ? phases[0] : phases.find(ph => ph.test(d))) || phases[0];
+                    const phaseKcal = Math.max(Math.round(w * phase.kcalPerKg), Math.round(w * 30));
+                    const notes = [];
+                    let level = 0, weeklyPct = null, weeklyKg = null;
+
+                    if (d !== null && d > 0 && diff > 0) {
+                        weeklyKg = diff / (d / 7);
+                        weeklyPct = pct / (d / 7);
+                        const limit = minor ? 0.7 : 1.0;
+                        if (weeklyPct > limit * 1.5) { level = 2; notes.push(`معدل النزول المطلوب ${weeklyPct.toFixed(2)}% أسبوعياً أعلى بكثير من الحد الآمن (~${limit}%). الأفضل تغيير الفئة الوزنية أو تأجيل الوزنية.`); }
+                        else if (weeklyPct > limit) { level = 1; notes.push(`معدل النزول المطلوب ${weeklyPct.toFixed(2)}% أسبوعياً فوق الحد المفضل (~${limit}%).`); }
+                        else notes.push('معدل النزول المطلوب ضمن الحد الآمن.');
+                    } else if (diff <= 0 && (d === null || d >= 0)) {
+                        notes.push('الوزن الحالي عند المطلوب أو أقل — ثبّت ولا تخفض أكثر.');
+                    }
+                    if (diff > 0 && pct > proto.maxTotalPct) {
+                        level = Math.max(level, 2);
+                        notes.push(`الفرق ${pct.toFixed(1)}% أكبر من المسموح لهذا البروتوكول (${proto.maxTotalPct}%) — غيّر الفئة الوزنية أو أجّل بدل التجفيف.`);
+                    }
+                    if (d === 0 && diff > 0.5) { level = 2; notes.push('ما زال اللاعب فوق الوزن المطلوب — لا تعوّض بالجفاف؛ راجع المدرب/الطبيب بشأن الفئة.'); }
+                    if (d !== null && d < 0) notes.push('تمت الوزنية: ابدأ بروتوكول إعادة الترطيب والتزود، ثم أنهِ قطع الوزن.');
+
+                    let expected = null, actual = null;
+                    const log = p.log || [];
+                    if (log.length && c.startDate && wi) {
+                        actual = log[log.length - 1].weight;
+                        const s = new Date(c.startDate + 'T00:00:00');
+                        const t = Math.min(1, Math.max(0, (today - s) / Math.max(86400000, wi - s)));
+                        expected = +(c.startWeight - (c.startWeight - tgt) * t).toFixed(1);
+                        if (d > 0 && actual - expected > 0.5) { level = Math.max(level, 1); notes.push(`متأخر عن المسار: الفعلي ${actual} مقابل المتوقع ${expected} كجم اليوم.`); }
+                    }
+                    if (minor) notes.push('لاعب دون 18 سنة: يلزم إشراف المدرب وولي الأمر وطاقة كافية للنمو.');
+
+                    const ui = RISK_UI[level];
+                    return {
+                        proto, minor, d, diff, weeklyPct, weeklyKg, phases, phase, phaseKcal, expected, actual, notes,
+                        daysLabel: d === null ? '—' : (d > 0 ? d + ' يوم' : (d === 0 ? 'اليوم الوزنية' : 'بعد الوزنية')),
+                        color: ui.color, box: ui.box, title: ui.title
+                    };
+                },
+
+                // ---------- Tracking ----------
+                get trackPlayer() { return this.players.find(p => p.id === this.trackId) || null; },
+                get trackStats() {
+                    const p = this.trackPlayer;
+                    if (!p || !p.log || !p.log.length) return null;
+                    const l = p.log;
+                    const avg = a => a.reduce((s, e) => s + e.weight, 0) / a.length;
+                    const last7 = l.slice(-7), prev7 = l.slice(-14, -7);
+                    const avg7 = avg(last7);
+                    const delta = prev7.length ? avg7 - avg(prev7) : null;
+                    const last = l[l.length - 1].weight;
+                    const adh = Math.round(last7.reduce((s, e) => s + e.adherence, 0) / last7.length);
+                    let warn = '';
+                    if (delta !== null && p.goal === 'تنشيف' && delta < 0) {
+                        const lossPct = (-delta / avg(prev7)) * 100;
+                        const limit = ageOf(p) < 18 ? 0.7 : 1.0;
+                        if (lossPct > limit) warn = `النزول الأسبوعي ${lossPct.toFixed(2)}% أعلى من الحد الآمن (~${limit}%) — راجع السعرات.`;
+                    }
+                    if (delta !== null && p.goal === 'تنشيف' && delta > 0.3 && p.cut && p.cut.active) warn = 'الوزن يرتفع رغم قطع الوزن — راجع الالتزام والسعرات.';
+                    return { last, avg7, delta, toTarget: last - p.targetWeight, adh, warn };
+                },
+                openTrack(p) {
+                    this.trackId = p.id;
+                    this.trackForm = { date: todayStr(), weight: p.currentWeight, adherence: 85, note: '' };
+                    this.$nextTick(() => this.buildTrackChart());
+                },
+                closeTrack() {
+                    this.trackId = '';
+                    if (trackChart) { trackChart.destroy(); trackChart = null; }
+                },
+                addLog() {
+                    const p = this.trackPlayer; if (!p) return;
+                    const w = Number(this.trackForm.weight);
+                    if (!w || w < 20 || w > 200) { alert('أدخل وزناً صحيحاً'); return; }
+                    const entry = { date: this.trackForm.date || todayStr(), weight: +w.toFixed(1), adherence: Number(this.trackForm.adherence) || 0, note: (this.trackForm.note || '').trim() };
+                    p.log = (p.log || []).filter(e => e.date !== entry.date);
+                    p.log.push(entry);
+                    p.log.sort((a, b) => a.date.localeCompare(b.date));
+                    this.syncFromLog(p);
+                    this.persist();
+                    this.trackForm.note = '';
+                    this.refreshTrackChart();
+                },
+                deleteLog(date) {
+                    const p = this.trackPlayer; if (!p) return;
+                    p.log = (p.log || []).filter(e => e.date !== date);
+                    this.syncFromLog(p);
+                    this.persist();
+                    this.refreshTrackChart();
+                },
+                syncFromLog(p) {
+                    const l = p.log || [];
+                    if (!l.length) return;
+                    p.currentWeight = l[l.length - 1].weight;
+                    const last = l.slice(-7);
+                    p.compliance = Math.round(last.reduce((a, e) => a + e.adherence, 0) / last.length);
+                },
+                buildTrackChart() {
+                    const el = document.getElementById('trackChart');
+                    if (!el) return;
+                    if (trackChart) trackChart.destroy();
+                    trackChart = new Chart(el.getContext('2d'), {
+                        type: 'line',
+                        data: { labels: [], datasets: [] },
+                        options: {
+                            responsive: true, maintainAspectRatio: false,
+                            scales: {
+                                y: { grid: { color: '#1e293b' }, ticks: { color: '#94a3b8' } },
+                                x: { grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 10 } } }
+                            },
+                            plugins: { legend: { labels: { color: '#f8fafc', font: { family: 'Cairo' } } } }
+                        }
+                    });
+                    this.refreshTrackChart();
+                },
+                refreshTrackChart() {
+                    if (!trackChart) return;
+                    const p = this.trackPlayer; if (!p) return;
+                    const l = p.log || [];
+                    const labels = l.map(e => e.date);
+                    const datasets = [
+                        { label: 'الوزن الفعلي', data: l.map(e => e.weight), borderColor: '#10b981', backgroundColor: '#10b981', tension: 0.25, pointRadius: 3 },
+                        { label: 'الوزن المستهدف', data: l.map(() => p.targetWeight), borderColor: '#f59e0b', borderDash: [6, 6], pointRadius: 0 }
+                    ];
+                    if (p.cut && p.cut.active && p.cut.startDate && p.cut.weighInDate) {
+                        const s = new Date(p.cut.startDate + 'T00:00:00'), e = new Date(p.cut.weighInDate + 'T00:00:00');
+                        datasets.push({
+                            label: 'المسار المتوقع', borderColor: '#38bdf8', borderDash: [2, 4], pointRadius: 0,
+                            data: l.map(x => {
+                                const t = Math.min(1, Math.max(0, (new Date(x.date + 'T00:00:00') - s) / Math.max(86400000, e - s)));
+                                return +(p.cut.startWeight - (p.cut.startWeight - p.cut.targetWeight) * t).toFixed(1);
+                            })
+                        });
+                    }
+                    trackChart.data.labels = labels;
+                    trackChart.data.datasets = datasets;
+                    trackChart.update();
+                },
+
+                getAverageCompliance() {
+                    if (!this.players.length) return 0;
+                    return Math.round(this.players.reduce((a, p) => a + (p.compliance || 0), 0) / this.players.length);
+                },
+
+                persist() { localStorage.setItem(STORAGE_KEY, JSON.stringify(this.players)); },
+
+                exportData() {
+                    const blob = new Blob([JSON.stringify(this.players, null, 2)], { type: 'application/json' });
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(blob);
+                    a.download = 'karate_team_nutrition_backup.json';
+                    document.body.appendChild(a); a.click(); a.remove();
+                },
+
+                importData(ev) {
+                    const file = ev.target.files[0]; if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                        try {
+                            const data = JSON.parse(reader.result);
+                            if (!Array.isArray(data)) throw new Error();
+                            if (confirm('سيتم استبدال البيانات الحالية بالملف المستورد. متابعة؟')) { this.players = data; this.persist(); }
+                        } catch (e) { alert('ملف غير صالح'); }
+                    };
+                    reader.readAsText(file);
+                    ev.target.value = '';
+                },
+
+                buildChart() {
+                    const ctx = document.getElementById('complianceChart').getContext('2d');
+                    complianceChart = new Chart(ctx, {
+                        type: 'bar',
+                        data: { labels: [], datasets: [{ label: 'نسبة الالتزام (%)', data: [], backgroundColor: '#10b981', borderRadius: 8 }] },
+                        options: {
+                            responsive: true, maintainAspectRatio: false,
+                            scales: {
+                                y: { beginAtZero: true, max: 100, grid: { color: '#1e293b' }, ticks: { color: '#94a3b8' } },
+                                x: { grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 10 } } }
+                            },
+                            plugins: { legend: { labels: { color: '#f8fafc', font: { family: 'Cairo' } } } }
+                        }
+                    });
+                    this.refreshChart();
+                },
+
+                refreshChart() {
+                    if (!complianceChart) return;
+                    const list = this.filteredPlayers;
+                    complianceChart.data.labels = list.map(p => shortName(p.name));
+                    complianceChart.data.datasets[0].data = list.map(p => p.compliance || 0);
+                    complianceChart.update();
+                }
+            };
+        }
+    </script>
+</body>
+</html>
